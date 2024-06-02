@@ -21,7 +21,7 @@ class AvitoParse:
                  tg_token: str = None,
                  max_price: int = 0,
                  min_price: int = 0,
-                 geo: str = None,
+                 geo: list = [],
                  debug_mode: int = 0
 
                  ):
@@ -37,10 +37,12 @@ class AvitoParse:
         self.debug_mode = debug_mode
 
     def __get_url(self):
+        self.driver.open("https://avito.ru")
+        self.driver.execute_script("window.stop();")
         self.driver.open(self.url)
 
         if "Доступ ограничен" in self.driver.get_title():
-            time.sleep(10)
+            time.sleep(20)
             raise Exception("Перезапуск из-за блокировки IP")
 
         self.driver.open_new_window()  # сразу открываем и вторую вкладку
@@ -103,7 +105,7 @@ class AvitoParse:
             description = data.get('description')
             url = data.get('url')
             price = data.get('price')
-            
+
             if self.is_viewed(ads_id):
                 continue
             self.viewed_list.append(ads_id)
@@ -116,8 +118,11 @@ class AvitoParse:
                     price) <= self.max_price:
                     self.data.append(self.__parse_full_page(url, data))
                     """Проверка адреса если нужно"""
-                    if self.geo and self.geo.lower() not in self.data[-1].get("geo", self.geo.lower()):
-                        continue
+
+                    if self.geo:
+                        for item in self.geo:
+                            if item.lower() not in self.data[-1].get("geo", [item.lower()]):
+                                continue
                     """Отправляем в телеграм"""
                     self.__pretty_log(data=data)
                     self.__save_data(data=data)
@@ -125,8 +130,10 @@ class AvitoParse:
 
                 self.data.append(self.__parse_full_page(url, data))
                 """Проверка адреса если нужно"""
-                if self.geo and self.geo.lower() not in self.data[-1].get("geo", self.geo.lower()):
-                    continue
+                if self.geo:
+                    for item in self.geo:
+                        if item.lower() not in self.data[-1].get("geo", [item.lower()]):
+                            continue
                 """Отправляем в телеграм"""
                 self.__pretty_log(data=data)
                 self.__save_data(data=data)
@@ -278,7 +285,7 @@ if __name__ == '__main__':
     import configparser
 
     config = configparser.ConfigParser()  # создаём объекта парсера
-    config.read("settings.ini")  # читаем конфиг
+    config.read("settings.ini", encoding="UTF-8")  # читаем конфиг
 
     try:
         """Багфикс проблем с экранированием"""
@@ -288,24 +295,26 @@ if __name__ == '__main__':
             line_url = file.readlines()[1]
             regex = r"http.+"
             url = re.search(regex, line_url)[0]
-    chat_id = config["Avito"]["CHAT_ID"]
+    chat_ids = config["Avito"]["CHAT_ID"]
     token = config["Avito"]["TG_TOKEN"]
     num_ads = config["Avito"]["NUM_ADS"]
     freq = config["Avito"]["FREQ"]
     keys = config["Avito"]["KEYS"]
     max_price = config["Avito"].get("MAX_PRICE", "0") or "0"
     min_price = config["Avito"].get("MIN_PRICE", "0") or "0"
-    geo = config["Avito"].get("GEO", "") or ""
+    geo = config["Avito"]["GEO"]
 
-    if token and chat_id:
-        params = {
-            'token': token,
-            'chat_id': chat_id
-        }
-        tg_handler = NotificationHandler("telegram", defaults=params)
+    chat_ids = chat_ids.split(",")
+    for tg_id in chat_ids:
+        if token and chat_ids:
+            params = {
+                'token': token,
+                'chat_id': tg_id
+            }
+            tg_handler = NotificationHandler("telegram", defaults=params)
 
-        """Все логи уровня SUCCESS и выше отсылаются в телегу"""
-        logger.add(tg_handler, level="SUCCESS", format="{message}")
+            """Все логи уровня SUCCESS и выше отсылаются в телегу"""
+            logger.add(tg_handler, level="SUCCESS", format="{message}")
 
     while True:
         try:
@@ -315,7 +324,7 @@ if __name__ == '__main__':
                 keysword_list=keys.split(","),
                 max_price=int(max_price),
                 min_price=int(min_price),
-                geo=geo
+                geo=geo.split(",")
             ).parse()
             logger.info("Пауза")
             time.sleep(int(freq) * 60)
